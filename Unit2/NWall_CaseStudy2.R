@@ -1,4 +1,5 @@
 library(ggplot2)
+library(RANN)
 
 ## Read the data into a dataframe
 txt = readLines("http://rdatasciencecases.org/Data/offline.final.trace.txt")
@@ -62,9 +63,16 @@ readData = function(filename){
 
 offline = readData("http://rdatasciencecases.org/Data/offline.final.trace.txt")
 
-##lets look at the head of the data
-head(offline)
-str(offline)
+# ##lets look at the head of the data
+# tail(offline)
+# str(offline)
+# 
+# boxplot(signal~mac,data=offline, main="Mac Signal Measurements",
+#         xlab="MAC Address", ylab="Signal") 
+# 
+# 
+# boxplot(signal~angle,data=singleMAC, main="Angle Signal Measurements",
+#         xlab="Angles", ylab="Signal") 
 
 # ##before moving on lets do some explorations
 # 
@@ -98,13 +106,17 @@ processOfflineSummary = function(offline){
 
 offlineSummary = processOfflineSummary(offline)
 
-head(offlineSummary)
-str(offlineSummary)
+# head(offlineSummary)
+# str(offlineSummary)
+# 
+# tst = reshapeSS(offlineSummary, varSignal = "avgSignal")
+# 
+# str(tst)
 
 online = readData("http://www.rdatasciencecases.org/Data/online.final.trace.txt")
 
-head(online)
-str(online)
+# head(online)
+# str(online)
 
 # code to create online summary
 processOnlineSummary = function(online){
@@ -126,9 +138,11 @@ processOnlineSummary = function(online){
 
 onlineSummary = processOnlineSummary(online)
 
-head(onlineSummary)
-str(onlineSummary)
-
+# head(onlineSummary)
+# str(onlineSummary)
+# 
+# boxplot(orientation~angle,data=onlineSummary, main="Mac Signal Measurements",
+#         xlab="MAC Address", ylab="Signal") 
 
 reshapeSS = function(data, varSignal = "signal", keepVars = c("posXY", "posX","posY")) {
   data$posXY = factor(data$posXY) ## added this here as well, since it needs to be a factor for the by function below
@@ -165,14 +179,133 @@ selectTrain = function(angleNewObs, signals = NULL, m = 1){   # m is the number 
   angles[angles < 0] = angles[ angles < 0 ] + 360
   angles[angles > 360] = angles[ angles > 360 ] - 360
   angles = sort(angles)
-  
   offlineSubset = signals[ signals$angle %in% angles, ]
   return(reshapeSS(offlineSubset, varSignal = "avgSignal"))
 }
 
-train90 = selectTrain(90, offlineSummary, m = 3) 
+## portion of code for testing distance function DELETE#
+# #subset a group from training
+# train90 = selectTrain(90, offlineSummary, m = 3)
+# test = onlineSummary[2 , 6:12]
+# test
+# train <- train90[,4:10]
+# head(train)
+# 
+# weights = scale <- function(x){1-(x-min(x))/(max(x)-min(x))}
+# 
+# diffs = apply(train90[,4:10], 1,function(x) x - test)
+# diffs = 
+# 
+# for (c in 1:ncol(train90[,4:10])){
+#   for (r in 1:nrow(train90))
+#   
+# }
+# 
+# dists = apply(diffs, 2, function(x) sqrt(sum(x^2)) )
 
-summary(train90)
+findNN = function(newSignal, trainSubset, k = 3) {
+  knn <- nn2(trainSubset[,4:10], newSignal, k = k)
+  nn <- trainSubset[knn$nn.idx , ]
+  nn$dist <- (array(knn$nn.dists))
+  nn$weightX <- nn$posX*((1/nn$dist)/sum((1/nn$dist)))
+  nn$weightY <- nn$posY*((1/nn$dist)/sum((1/nn$dist)))
+  return(nn)
+}
 
-plot(train90$posx, train90$posy, main="Training Locations ", 
-     xlab="Pos X ", ylab="Pos Y", pch=19, xlim
+findWeightedNN = function(newSignal, trainSubset, k = 3) {
+  knn <- nn2(trainSubset[,4:10], newSignal, k = k)
+  nn <- trainSubset[knn$nn.idx , ]
+  nn$dist <- (array(knn$nn.dists))
+  nn$weightX <- nn$posX*((1/nn$dist)/sum((1/nn$dist)))
+  nn$weightY <- nn$posY*((1/nn$dist)/sum((1/nn$dist)))
+  return(nn)
+}
+
+
+predXY = function(newSignals, newAngles, trainData, numAngles = 1, k = 3){
+  closeXY = list(length = nrow(newSignals))
+  for (i in 1:nrow(newSignals)) {
+    trainSS = selectTrain(newAngles[i], trainData, m = numAngles)
+    tmp = findNN(newSignal = newSignals[i, ], trainSS, k=k)
+    estXY = colMeans(tmp[sapply(tmp[1:3], is.numeric)])[,c('')]
+    closeXY[[i]] = estXY
+  }
+  return(do.call(rbind, closeXY))
+}
+
+
+weightedPredXY = function(newSignals, newAngles, trainData, numAngles = 1, k = 3){
+  closeXY = list(length = nrow(newSignals))
+  for (i in 1:nrow(newSignals)) {
+    trainSS = selectTrain(newAngles[i], trainData, m = numAngles)
+    tmp = findNN(newSignal = newSignals[i, ], trainSS, k=k)
+    estXY = colSums(tmp[,c('weightX','weightY')])
+    names(estXY) = c('posX','posY')
+    closeXY[[i]] = estXY
+  }
+  return(do.call(rbind, closeXY))
+}
+
+plotDistance = function(compare){
+  p <- ggplot(compare, aes(x=posX, y=posY)) +
+    geom_point(aes(colour = 'Actual' )) + 
+    geom_point(aes(x=estX, y=estY, colour='Estimated')) +
+    geom_segment(data = compare, 
+                 aes(x = posX, xend = estX, 
+                     y = posY, yend = estY), alpha = 0.25) +
+    labs(title = 'Distance between Actual vs Predicted', x= 'Position X', y= 'Position Y', colour = "Groups") +
+    theme(legend.position="bottom", plot.title = element_text(hjust = 0.5))
+  return(p)
+}
+
+
+kTesting = function(newSignals, newAngles, trainData, numAngles = 3, range = 3){
+  error = list(range)
+  for (i in 1:range){
+    estXY = predXY(newSignals = onlineSummary[ , 6:12],newAngles = onlineSummary[ , 4] 
+                   ,offlineSummary, numAngles = 3, k = i)
+    
+    weightedEstXY = weightedPredXY(newSignals = onlineSummary[ , 6:12],newAngles = onlineSummary[ , 4] 
+                                    ,offlineSummary, numAngles = 3, k = i) 
+    
+    calcError =function(estXY, actualXY) sum(rowSums((estXY - actualXY)^2))
+    actualXY = onlineSummary[ , c("posX", "posY")]
+    error[[i]] = sapply(list(estXY, weightedEstXY), calcError, actualXY)
+    print(error[[i]])
+    #also plot the weighted distance plots
+    actualXY$estX <- weightedEstXY[,1]
+    actualXY$estY <- weightedEstXY[,2]
+    
+    pdf(paste0("Distance_Plot_K", i, ".pdf"))
+    plotDistance(actualXY)
+    dev.off()
+  }
+  return(error)
+}
+
+error = kTesting(onlineSummary[ , 6:12], newAngles = onlineSummary[ , 4] ,offlineSummary, numAngles = 3, range = 10)
+errorDF = data.frame(do.call(rbind, error))
+errorDF$k <- as.numeric(row.names(errorDF))
+
+pdf(paste0("ErrorPlotsAccrossRange.pdf"))
+ggplot(errorDF, aes(k)) + 
+  geom_line(aes(y = X1, colour = "Raw Average")) + 
+  geom_line(aes(y = X2, colour = "Weighted Average")) +
+  labs(title = 'Raw Average vs Weighted Average', x= 'K Nearest Neighbors', y= 'Error', colour = "Metric") +
+  theme(legend.position="bottom",plot.title = element_text(hjust = 0.5))
+dev.off()
+
+
+estXYk = predXY(newSignals = onlineSummary[ , 6:12],newAngles = onlineSummary[ , 4] 
+                 ,offlineSummary, numAngles = 3, k = 1)
+
+weightedEstXY = weightedPredXY(newSignals = onlineSummary[ , 6:12],newAngles = onlineSummary[ , 4] 
+                 ,offlineSummary, numAngles = 3, k = 1)
+
+actualXY$estX <- weightedEstXY[,1]
+actualXY$estY <- weightedEstXY[,2]
+pdf(paste0("Distance_Plot_Weighted_k1.pdf"))
+plotDistance(actualXY)
+dev.off()
+
+

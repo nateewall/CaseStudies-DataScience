@@ -204,15 +204,15 @@ selectTrain = function(angleNewObs, signals = NULL, m = 1){   # m is the number 
 
 
 
-<!-- ```{r} -->
-<!-- findNN = function(newSignal, trainSubset) { -->
-<!--   diffs = apply(trainSubset[ , 4:9], 1, function(x) x - newSignal) # this returns a list of data frames - DOESN'T WORK FROM THE BOOK -->
-<!--   diffs = do.call("rbind", diffs) # converts diffs into a single data frame -->
-<!--   diffs = as.matrix(diffs) # converts dataframe to a matrix -->
-<!--   dists = apply(diffs, 2, function(x) sqrt(sum(x^2))) # for each row of diffs, square the distance for each, add together, take square root -->
-<!--   closest = order(dists) -->
-<!--   return(trainSubset[closest, 1:3 ]) -->
-<!-- } -->
+```{r}
+findNN = function(newSignal, trainSubset) {
+  diffs = apply(trainSubset[ , 4:9], 1, function(x) x - newSignal) # this returns a list of data frames - DOESN'T WORK FROM THE BOOK
+  diffs = do.call("rbind", diffs) # converts diffs into a single data frame
+  diffs = as.matrix(diffs) # converts dataframe to a matrix
+  dists = apply(diffs, 2, function(x) sqrt(sum(x^2))) # for each row of diffs, square the distance for each, add together, take square root
+  closest = order(dists)
+  return(trainSubset[closest, 1:3 ])
+}
 
 <!-- ``` -->
 
