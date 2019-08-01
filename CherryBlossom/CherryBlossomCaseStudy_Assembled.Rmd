@@ -1,0 +1,155 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+# Prep
+setwd("~/Documents/SMU/1_7333 QTW/CaseStudy4")
+```
+
+```{r}
+# Web Scraping
+library(XML)
+extractResTable =
+   function(url, year = 1999, sex = "male", file = NULL)
+  {
+    doc = htmlParse(url)
+    
+    if (year == 1999) {
+      ff = getNodeSet(doc, "//pre")
+      txt = xmlValue(ff[[1]])
+      els = strsplit(txt, "\n")[[1]] ## the '99 files use \n not \r\n
+    }
+    else if (year == 2000) {
+       # Revise the HTML by line to remove the /font tags and force the parse to correctly infer where they belong
+      html2000 = readLines("http://www.cherryblossom.org/results/2000/cb003m.htm")
+      newhtml2000 = sub("</font>","",html2000)
+      doc = htmlParse(newhtml2000)
+      pres = getNodeSet(doc,"//pre")
+      txt = xmlValue(pres[[1]])
+      els = strsplit(txt, "\n")[[1]] 
+    }
+    else if (year == 2009 & sex == "male") {
+      # Get preformatted text from <div class="Section1"> element
+      # Each line of results is in a <pre> element
+      div1 = getNodeSet(doc, "//div[@class='Section1']")
+      pres = getNodeSet(div1[[1]], "//pre")
+      els = sapply(pres, xmlValue)
+    }
+    else {
+      # Get preformatted text from <pre> elements
+      pres = getNodeSet(doc, "//pre")
+      txt = xmlValue(pres[[1]])
+      els = strsplit(txt, "\r\n")[[1]]   
+    } 
+    
+    if (is.null(file)){
+      return(els)
+    } else {
+      # Write the lines as a text file.
+      fileConn = file(file)
+      writeLines(els, con = fileConn)
+      close(fileConn)
+      return(els)
+    }
+  }
+
+menURLs = 
+  c("results/1999/cb99m.html", "results/2000/Cb003m.htm", "results/2001/oof_m.html",
+    "results/2002/oofm.htm", "results/2003/CB03-M.HTM",
+    "results/2004/men.htm", "results/2005/CB05-M.htm", 
+    "results/2006/men.htm", "results/2007/men.htm", 
+    "results/2008/men.htm", "results/2009/09cucb-M.htm",
+    "results/2010/2010cucb10m-m.htm", 
+    "results/2011/2011cucb10m-m.htm",
+    "results/2012/2012cucb10m-m.htm")
+
+# create URLs for getting all men's data 
+ubase = "http://www.cherryblossom.org/"
+men_urls = paste(ubase, menURLs, sep = "")
+
+womenURLs = c("results/1999/cb99f.html", "results/2000/Cb003f.htm", "results/2001/oof_f.html",
+              "results/2002/ooff.htm", "results/2003/CB03-F.HTM",
+              "results/2004/women.htm", "results/2005/CB05-F.htm", 
+              "results/2006/women.htm", "results/2007/women.htm", 
+              "results/2008/women.htm", "results/2009/09cucb-F.htm",
+              "results/2010/2010cucb10m-f.htm", 
+              "results/2011/2011cucb10m-f.htm",
+              "results/2012/2012cucb10m-f.htm")
+
+years = 1999:2012
+
+women_urls = paste(ubase, womenURLs, sep = "")
+
+menFiles = sapply(years, function(x){paste(x, "m.txt", sep="")})
+womenFiles = sapply(years, function(x){paste(x, "w.txt", sep="")})
+
+mensTables = mapply(extractResTable, url = men_urls, year = years, sex = "male", file = menFiles)
+womensTables = mapply(extractResTable, url = women_urls, year = years, sex = "female", file = womenFiles)
+
+# save(mensTables, file = "CBMenTextTables.rda")
+# save(womensTables, file = "CBWomenTextTables.rda")
+
+```
+
+```{r}
+# Functions to pull data from tables
+findColLocs = function(spacerRow) {
+  
+  spaceLocs = gregexpr(" ", spacerRow)[[1]]
+  rowLength = nchar(spacerRow)
+  
+  if (substring(spacerRow, rowLength, rowLength) != " ")
+    return( c(0, spaceLocs, rowLength + 1))
+  else return(c(0, spaceLocs))
+}
+
+selectCols = 
+  function(colNames, headerRow, searchLocs) 
+  {
+    sapply(colNames, 
+           function(name, headerRow, searchLocs)
+           {
+             startPos = regexpr(name, headerRow)[[1]]
+             if (startPos == -1) 
+               return( c(NA, NA) )
+             
+             index = sum(startPos >= searchLocs)
+             c(searchLocs[index] + 1, searchLocs[index + 1])
+           },
+           headerRow = headerRow, searchLocs = searchLocs )
+  }
+
+extractVariables = 
+  function(file, varNames =c("name", "home", "ag", "gun",
+                             "net", "time"))
+  {
+    # Find the index of the row with =s
+    eqIndex = grep("^===", file)
+    # Extract the two key rows and the data
+    spacerRow = file[eqIndex] 
+    headerRow = tolower(file[ eqIndex - 1 ])
+    body = file[ -(1 : eqIndex) ]
+    
+    # Obtain the starting and ending positions of variables
+    searchLocs = findColLocs(spacerRow)
+    locCols = selectCols(varNames, headerRow, searchLocs)
+    
+    Values = mapply(substr, list(body), start = locCols[1, ], 
+                    stop = locCols[2, ])
+    colnames(Values) = varNames
+    
+    invisible(Values)
+  }
+
+```
+
+```{r}
+# Extracting data from mens tables
+mfilenames = paste( 1999:2012, "m.txt", sep = "")
+menFiles = lapply(mfilenames, readLines)
+names(menFiles) = 1999:2012
+
+menResMat = lapply(menFiles, extractVariables)
+```
+
