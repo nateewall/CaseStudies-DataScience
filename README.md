@@ -1,3 +1,1 @@
-# MSDS7333
-
-Code used for Quantifying to the world case studies
+# Repository shows a collection of data science case studies for a variety of topics
